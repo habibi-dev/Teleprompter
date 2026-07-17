@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>تله‌پرامپتر</title>
+<style>
+  /* ---- Design tokens ---- */
+  :root{
+    --bg: #0b0d10;
+    --panel: #14171b;
+    --panel-border: #262a30;
+    --text: #f2f3f5;
+    --muted: #9aa1a9;
+    --accent: #ff5a3c;
+    --accent-soft: rgba(255,90,60,0.15);
+    --danger: #e5484d;
+    --font-size: 40px;
+    --line-height: 1.8;
+    --letter-spacing: 0px;
+    --dim-opacity: 0.32;
+  }
+
+  *{ box-sizing: border-box; }
+
+  html, body{
+    margin:0;
+    padding:0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Vazirmatn", "Tahoma", "Segoe UI", sans-serif;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  /* ---- Setup screen ---- */
+  #setup-screen{
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding: 20px 16px 24px;
+    gap: 14px;
+  }
+
+  #setup-screen h1{
+    font-size: 20px;
+    margin: 4px 0 2px;
+    font-weight: 700;
+  }
+
+  #setup-screen p.hint{
+    color: var(--muted);
+    font-size: 13px;
+    margin: 0 0 4px;
+  }
+
+  textarea#script-input{
+    flex: 1;
+    min-height: 140px;
+    resize: none;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    color: var(--text);
+    font-size: 18px;
+    line-height: 1.7;
+    padding: 14px;
+    direction: rtl;
+    text-align: right;
+    outline: none;
+  }
+
+  textarea#script-input:focus{
+    border-color: var(--accent);
+  }
+
+  .controls-grid{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .control-box{
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 12px;
+    padding: 10px 12px;
+  }
+
+  .control-box label{
+    display: flex;
+    justify-content: space-between;
+    font-size: 12.5px;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+
+  .control-box label span.val{
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  input[type="range"]{
+    width: 100%;
+    accent-color: var(--accent);
+    height: 4px;
+  }
+
+  #estimate-box{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 12px;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  #estimate-box .estimate-value{
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 16px;
+  }
+
+  #start-btn{
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 14px;
+    padding: 16px;
+    font-size: 17px;
+    font-weight: 700;
+    cursor: pointer;
+    margin-top: 4px;
+  }
+
+  #start-btn:active{
+    opacity: 0.85;
+  }
+
+  /* ---- Prompter screen ---- */
+  #prompter-screen{
+    display: none;
+    height: 100vh;
+    position: relative;
+    background: var(--bg);
+    overflow: hidden;
+  }
+
+  #prompter-screen.active{
+    display: block;
+  }
+
+  /* Mirror guide line in the middle */
+  #center-line{
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(to left, transparent, var(--accent-soft) 15%, var(--accent-soft) 85%, transparent);
+    z-index: 5;
+    pointer-events: none;
+  }
+
+  #scroll-viewport{
+    height: 100%;
+    overflow: hidden;
+    position: relative;
+  }
+
+  #scroll-content{
+    direction: rtl;
+    text-align: right;
+    font-size: var(--font-size);
+    letter-spacing: var(--letter-spacing);
+    padding: 0 24px;
+    position: relative;
+    will-change: transform;
+  }
+
+  /* Each user-entered line becomes its own block so it can be individually highlighted */
+  .prompt-line{
+    line-height: var(--line-height);
+    white-space: pre-wrap;
+    word-break: break-word;
+    opacity: var(--dim-opacity);
+    color: var(--text);
+    transition: opacity 0.2s ease, color 0.2s ease;
+  }
+
+  .prompt-line.active-line{
+    opacity: 1;
+    color: #ffffff;
+  }
+
+  .prompt-line.blank-line{
+    height: 0.4em;
+  }
+
+  /* Top/bottom fade for readability */
+  #fade-top, #fade-bottom{
+    position: absolute;
+    left: 0; right: 0;
+    height: 70px;
+    z-index: 6;
+    pointer-events: none;
+  }
+  #fade-top{
+    top: 0;
+    background: linear-gradient(to bottom, var(--bg), transparent);
+  }
+  #fade-bottom{
+    bottom: 0;
+    background: linear-gradient(to top, var(--bg), transparent);
+  }
+
+  /* Floating control bar */
+  #floating-bar{
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    background: rgba(20,23,27,0.92);
+    backdrop-filter: blur(6px);
+    border-top: 1px solid var(--panel-border);
+    padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+    transition: transform 0.25s ease;
+  }
+
+  #floating-bar.hidden{
+    transform: translateY(100%);
+  }
+
+  .bar-row{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+
+  .bar-row:last-child{
+    margin-bottom: 0;
+  }
+
+  .button-group{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .icon-btn{
+    background: var(--panel-border);
+    color: var(--text);
+    border: none;
+    border-radius: 10px;
+    min-width: 54px;
+    height: 50px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 4px 8px;
+    flex-shrink: 0;
+    cursor: pointer;
+  }
+
+  .icon-btn .icon{
+    font-size: 16px;
+    line-height: 1;
+  }
+
+  .icon-btn .label{
+    font-size: 9.5px;
+    line-height: 1;
+    opacity: 0.9;
+    white-space: nowrap;
+  }
+
+  .icon-btn.play{
+    background: var(--accent);
+    min-width: 64px;
+  }
+
+  .icon-btn.exit{
+    background: var(--danger);
+  }
+
+  .icon-btn.toggle-on{
+    background: var(--accent);
+  }
+
+  /* Time estimate box, placed on the visually left side of the button row */
+  #time-box{
+    text-align: left;
+    font-size: 11.5px;
+    color: var(--muted);
+    line-height: 1.5;
+    flex-shrink: 0;
+    min-width: 78px;
+  }
+
+  #time-box .time-line{
+    white-space: nowrap;
+  }
+
+  #time-box .time-line .num{
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--accent);
+    direction: ltr;
+    display: inline-block;
+  }
+
+  #time-box .time-line.total .num{
+    color: var(--muted);
+  }
+
+  .mini-slider{
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .mini-slider input[type="range"]{
+    flex: 1;
+  }
+
+  .mini-slider .val{
+    width: 34px;
+    text-align: center;
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 12px;
+  }
+
+  /* Tap/drag zone: tap toggles the bar, vertical drag manually scrolls the script */
+  #tap-toggle{
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 120px;
+    z-index: 4;
+    touch-action: none;
+    cursor: grab;
+  }
+
+  @media (min-width: 700px){
+    .controls-grid{ grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ===================== SETUP SCREEN ===================== -->
+<div id="setup-screen">
+  <h1>تله‌پرامپتر</h1>
+  <p class="hint">پیشنهاد: هر جمله رو در یک خط جدا بنویس تا حالت تمرکز روی خط بهتر کار کنه.</p>
+
+  <textarea id="script-input" placeholder="متن خودت رو اینجا وارد کن..."></textarea>
+
+  <div class="controls-grid">
+    <div class="control-box">
+      <label>سرعت اسکرول <span class="val" id="speed-val">40</span></label>
+      <input type="range" id="speed-range" min="5" max="150" value="40" step="1">
+    </div>
+    <div class="control-box">
+      <label>اندازه فونت <span class="val" id="fontsize-val">40</span></label>
+      <input type="range" id="fontsize-range" min="20" max="90" value="40" step="1">
+    </div>
+    <div class="control-box">
+      <label>فاصله بین خطوط <span class="val" id="lineheight-val">1.8</span></label>
+      <input type="range" id="lineheight-range" min="1.2" max="3" value="1.8" step="0.1">
+    </div>
+    <div class="control-box">
+      <label>فاصله حروف <span class="val" id="letterspacing-val">0</span></label>
+      <input type="range" id="letterspacing-range" min="0" max="8" value="0" step="0.5">
+    </div>
+  </div>
+
+  <div id="estimate-box">
+    <span>زمان تقریبی خوانش با این تنظیمات</span>
+    <span class="estimate-value" id="estimate-value">۰۰:۰۰</span>
+  </div>
+
+  <button id="start-btn">شروع خوانش</button>
+</div>
+
+<!-- ===================== PROMPTER SCREEN ===================== -->
+<div id="prompter-screen">
+  <div id="center-line"></div>
+  <div id="scroll-viewport">
+    <div id="scroll-content"></div>
+  </div>
+  <div id="fade-top"></div>
+  <div id="fade-bottom"></div>
+
+  <!-- Tap here toggles the control bar. Drag up/down here manually scrolls the script,
+       including bringing it back to the beginning. -->
+  <div id="tap-toggle"></div>
+
+  <div id="floating-bar">
+    <div class="bar-row">
+      <div class="button-group">
+        <button class="icon-btn exit" id="exit-btn">
+          <span class="icon">✕</span>
+          <span class="label">خروج</span>
+        </button>
+        <button class="icon-btn play" id="play-btn">
+          <span class="icon" id="play-icon">▶</span>
+          <span class="label" id="play-label">پخش</span>
+        </button>
+        <button class="icon-btn" id="mirror-btn">
+          <span class="icon">⇋</span>
+          <span class="label">آینه</span>
+        </button>
+        <button class="icon-btn toggle-on" id="focus-btn">
+          <span class="icon">◎</span>
+          <span class="label">تمرکز</span>
+        </button>
+      </div>
+      <div id="time-box">
+        <div class="time-line remaining">باقیمانده: <span class="num" id="time-remaining">۰۰:۰۰</span></div>
+        <div class="time-line total">کل متن: <span class="num" id="time-total">۰۰:۰۰</span></div>
+      </div>
+    </div>
+    <div class="bar-row">
+      <div class="mini-slider">
+        <span>سرعت</span>
+        <input type="range" id="live-speed" min="5" max="150" step="1" value="40">
+        <span class="val" id="live-speed-val">40</span>
+      </div>
+    </div>
+    <div class="bar-row">
+      <div class="mini-slider">
+        <span>فونت</span>
+        <input type="range" id="live-fontsize" min="20" max="90" step="1" value="40">
+        <span class="val" id="live-fontsize-val">40</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- Element references ----------
+  var setupScreen = document.getElementById('setup-screen');
+  var prompterScreen = document.getElementById('prompter-screen');
+  var scriptInput = document.getElementById('script-input');
+  var scrollContent = document.getElementById('scroll-content');
+  var scrollViewport = document.getElementById('scroll-viewport');
+  var floatingBar = document.getElementById('floating-bar');
+  var tapToggle = document.getElementById('tap-toggle');
+
+  // Setup screen sliders
+  var speedRange = document.getElementById('speed-range');
+  var fontsizeRange = document.getElementById('fontsize-range');
+  var lineheightRange = document.getElementById('lineheight-range');
+  var letterspacingRange = document.getElementById('letterspacing-range');
+
+  var speedVal = document.getElementById('speed-val');
+  var fontsizeVal = document.getElementById('fontsize-val');
+  var lineheightVal = document.getElementById('lineheight-val');
+  var letterspacingVal = document.getElementById('letterspacing-val');
+  var estimateValue = document.getElementById('estimate-value');
+
+  // Prompter screen controls
+  var playBtn = document.getElementById('play-btn');
+  var exitBtn = document.getElementById('exit-btn');
+  var mirrorBtn = document.getElementById('mirror-btn');
+  var focusBtn = document.getElementById('focus-btn');
+  var liveSpeed = document.getElementById('live-speed');
+  var liveSpeedVal = document.getElementById('live-speed-val');
+  var liveFontsize = document.getElementById('live-fontsize');
+  var liveFontsizeVal = document.getElementById('live-fontsize-val');
+  var startBtn = document.getElementById('start-btn');
+  var timeRemainingEl = document.getElementById('time-remaining');
+  var timeTotalEl = document.getElementById('time-total');
+
+  // ---------- State ----------
+  var state = {
+    speed: 40,          // pixels per second
+    fontSize: 40,        // px
+    lineHeight: 1.8,
+    letterSpacing: 0,    // px
+    isPlaying: false,
+    isMirrored: false,
+    focusMode: true,
+    position: 0,          // current translateY offset of the script, in px
+    lastTimestamp: null,
+    lastFocusCheck: 0,
+    rafId: null,
+    lineElements: []
+  };
+
+  // ---------- Persian digit formatting ----------
+  var persianDigits = ['۰','۱','۲','۳','۴','۵','۶','۷','۸','۹'];
+  function toPersianDigits(str){
+    return String(str).replace(/[0-9]/g, function(d){ return persianDigits[+d]; });
+  }
+
+  function formatTime(totalSeconds){
+    if(!isFinite(totalSeconds) || totalSeconds < 0) totalSeconds = 0;
+    var m = Math.floor(totalSeconds / 60);
+    var s = Math.floor(totalSeconds % 60);
+    var mm = (m < 10 ? '0' : '') + m;
+    var ss = (s < 10 ? '0' : '') + s;
+    return toPersianDigits(mm + ':' + ss);
+  }
+
+  // ---------- Sync setup screen slider labels ----------
+  function bindSetupSlider(rangeEl, labelEl, key, formatter){
+    rangeEl.addEventListener('input', function(){
+      var v = parseFloat(rangeEl.value);
+      state[key] = v;
+      labelEl.textContent = formatter ? formatter(v) : v;
+      updateSetupEstimate();
+    });
+  }
+
+  bindSetupSlider(speedRange, speedVal, 'speed');
+  bindSetupSlider(fontsizeRange, fontsizeVal, 'fontSize');
+  bindSetupSlider(lineheightRange, lineheightVal, 'lineHeight', function(v){ return toPersianDigits(v.toFixed(1)); });
+  bindSetupSlider(letterspacingRange, letterspacingVal, 'letterSpacing');
+  scriptInput.addEventListener('input', updateSetupEstimate);
+
+  // ---------- Hidden measurement element to estimate reading duration before starting ----------
+  var measureEl = document.createElement('div');
+  measureEl.style.position = 'absolute';
+  measureEl.style.visibility = 'hidden';
+  measureEl.style.top = '-9999px';
+  measureEl.style.right = '0';
+  measureEl.style.width = '100vw';
+  measureEl.style.padding = '0 24px';
+  measureEl.style.boxSizing = 'border-box';
+  measureEl.style.direction = 'rtl';
+  document.body.appendChild(measureEl);
+
+  function buildLineElements(container, text){
+    container.innerHTML = '';
+    var rawLines = text.split('\n');
+    var elements = [];
+    for(var i = 0; i < rawLines.length; i++){
+      var lineDiv = document.createElement('div');
+      lineDiv.className = 'prompt-line';
+      var content = rawLines[i];
+      if(content.trim() === ''){
+        lineDiv.className += ' blank-line';
+        lineDiv.innerHTML = '&nbsp;';
+      } else {
+        lineDiv.textContent = content;
+      }
+      container.appendChild(lineDiv);
+      elements.push(lineDiv);
+    }
+    return elements;
+  }
+
+  function updateSetupEstimate(){
+    var text = scriptInput.value.trim();
+    if(!text){
+      estimateValue.textContent = toPersianDigits('00:00');
+      return;
+    }
+    measureEl.style.fontSize = state.fontSize + 'px';
+    measureEl.style.letterSpacing = state.letterSpacing + 'px';
+    buildLineElements(measureEl, text);
+    var lines = measureEl.querySelectorAll('.prompt-line');
+    for(var i = 0; i < lines.length; i++){
+      lines[i].style.lineHeight = state.lineHeight;
+    }
+    var contentHeight = measureEl.scrollHeight;
+    var seconds = contentHeight / state.speed;
+    estimateValue.textContent = formatTime(seconds);
+  }
+
+  // ---------- Apply CSS variables ----------
+  function applyStyles(){
+    document.documentElement.style.setProperty('--font-size', state.fontSize + 'px');
+    document.documentElement.style.setProperty('--line-height', state.lineHeight);
+    document.documentElement.style.setProperty('--letter-spacing', state.letterSpacing + 'px');
+  }
+
+  // ---------- Start reading ----------
+  startBtn.addEventListener('click', function(){
+    var text = scriptInput.value.trim();
+    if(!text){
+      alert('لطفا اول متن رو وارد کن.');
+      return;
+    }
+
+    applyStyles();
+    state.lineElements = buildLineElements(scrollContent, text);
+
+    // Sync live control values with setup values
+    liveSpeed.value = state.speed;
+    liveSpeedVal.textContent = state.speed;
+    liveFontsize.value = state.fontSize;
+    liveFontsizeVal.textContent = state.fontSize;
+
+    // Script starts visible right at the top of the screen, no waiting for it to scroll in
+    state.position = 0;
+    scrollContent.style.transform = 'translateY(0px)';
+
+    setupScreen.style.display = 'none';
+    prompterScreen.classList.add('active');
+
+    document.body.style.overflow = 'hidden';
+
+    updateFocusLine();
+    updateTimeDisplay();
+  });
+
+  // ---------- Live speed / font size adjustments while running ----------
+  liveSpeed.addEventListener('input', function(){
+    state.speed = parseFloat(liveSpeed.value);
+    liveSpeedVal.textContent = state.speed;
+    updateTimeDisplay();
+  });
+
+  liveFontsize.addEventListener('input', function(){
+    state.fontSize = parseFloat(liveFontsize.value);
+    liveFontsizeVal.textContent = state.fontSize;
+    applyStyles();
+    updateTimeDisplay();
+  });
+
+  // ---------- Focus-line highlighting ----------
+  // Highlights the paragraph/line currently crossing the center guide, dims the rest.
+  function updateFocusLine(){
+    if(!state.focusMode || state.lineElements.length === 0) return;
+
+    var viewportRect = scrollViewport.getBoundingClientRect();
+    var centerY = viewportRect.top + viewportRect.height / 2;
+
+    var closestEl = null;
+    var closestDistance = Infinity;
+
+    for(var i = 0; i < state.lineElements.length; i++){
+      var el = state.lineElements[i];
+      if(el.classList.contains('blank-line')) continue;
+      var rect = el.getBoundingClientRect();
+      if(rect.bottom < viewportRect.top - 200 || rect.top > viewportRect.bottom + 200) continue; // skip far-off lines for performance
+      var lineCenter = rect.top + rect.height / 2;
+      var distance = Math.abs(lineCenter - centerY);
+      if(distance < closestDistance){
+        closestDistance = distance;
+        closestEl = el;
+      }
+    }
+
+    for(var j = 0; j < state.lineElements.length; j++){
+      var isActive = state.lineElements[j] === closestEl;
+      state.lineElements[j].classList.toggle('active-line', isActive);
+    }
+  }
+
+  // ---------- Time remaining / total display while reading ----------
+  function updateTimeDisplay(){
+    var contentHeight = scrollContent.scrollHeight;
+    var totalSeconds = contentHeight / state.speed;
+
+    var remainingDistance = state.position + contentHeight;
+    if(remainingDistance < 0) remainingDistance = 0;
+    var remainingSeconds = remainingDistance / state.speed;
+
+    timeTotalEl.textContent = formatTime(totalSeconds);
+    timeRemainingEl.textContent = formatTime(remainingSeconds);
+  }
+
+  // ---------- Animation loop ----------
+  function step(timestamp){
+    if(state.lastTimestamp === null){
+      state.lastTimestamp = timestamp;
+    }
+    var delta = (timestamp - state.lastTimestamp) / 1000; // seconds
+    state.lastTimestamp = timestamp;
+
+    if(state.isPlaying){
+      state.position -= state.speed * delta;
+      scrollContent.style.transform = 'translateY(' + state.position + 'px)';
+
+      updateTimeDisplay();
+
+      // Throttle focus-line recalculation for performance
+      if(timestamp - state.lastFocusCheck > 120){
+        updateFocusLine();
+        state.lastFocusCheck = timestamp;
+      }
+
+      // Stop automatically once content has fully scrolled past the top
+      var contentHeight = scrollContent.scrollHeight;
+      if(state.position < -contentHeight){
+        state.isPlaying = false;
+        updatePlayButton();
+      }
+    }
+
+    state.rafId = requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+
+  // ---------- Play / pause ----------
+  function updatePlayButton(){
+    var icon = document.getElementById('play-icon');
+    var label = document.getElementById('play-label');
+    if(state.isPlaying){
+      icon.textContent = '❚❚';
+      label.textContent = 'توقف';
+    } else {
+      icon.textContent = '▶';
+      label.textContent = 'پخش';
+    }
+  }
+
+  playBtn.addEventListener('click', function(){
+    state.isPlaying = !state.isPlaying;
+    updatePlayButton();
+  });
+
+  // ---------- Mirror toggle (useful for physical teleprompter glass rigs) ----------
+  mirrorBtn.addEventListener('click', function(){
+    state.isMirrored = !state.isMirrored;
+    scrollViewport.style.transform = state.isMirrored ? 'scaleX(-1)' : 'none';
+    mirrorBtn.classList.toggle('toggle-on', state.isMirrored);
+  });
+
+  // ---------- Focus mode toggle ----------
+  focusBtn.addEventListener('click', function(){
+    state.focusMode = !state.focusMode;
+    focusBtn.classList.toggle('toggle-on', state.focusMode);
+    if(state.focusMode){
+      // Clear the inline opacity that was forced on while focus mode was off,
+      // otherwise it overrides the class-based dimming and every line stays bright.
+      for(var i = 0; i < state.lineElements.length; i++){
+        state.lineElements[i].style.opacity = '';
+      }
+      updateFocusLine();
+    } else {
+      for(var i = 0; i < state.lineElements.length; i++){
+        state.lineElements[i].classList.remove('active-line');
+        state.lineElements[i].style.opacity = '1';
+      }
+    }
+  });
+
+  // ---------- Exit back to setup screen ----------
+  exitBtn.addEventListener('click', function(){
+    state.isPlaying = false;
+    updatePlayButton();
+    prompterScreen.classList.remove('active');
+    setupScreen.style.display = 'flex';
+    document.body.style.overflow = '';
+  });
+
+  // ---------- Manual drag scrolling (also lets the reader bring the script back to the start) ----------
+  var drag = { active: false, moved: false, startY: 0, startPosition: 0 };
+  var DRAG_THRESHOLD = 4; // px, to distinguish a tap from a drag
+
+  function clampPosition(pos){
+    var contentHeight = scrollContent.scrollHeight;
+    var minPos = -(contentHeight + 40);
+    var maxPos = scrollViewport.clientHeight;
+    if(pos < minPos) pos = minPos;
+    if(pos > maxPos) pos = maxPos;
+    return pos;
+  }
+
+  function applyDragPosition(newPosition){
+    state.position = clampPosition(newPosition);
+    scrollContent.style.transform = 'translateY(' + state.position + 'px)';
+    if(state.isPlaying){
+      state.isPlaying = false;
+      updatePlayButton();
+    }
+    updateFocusLine();
+    updateTimeDisplay();
+  }
+
+  tapToggle.addEventListener('pointerdown', function(e){
+    drag.active = true;
+    drag.moved = false;
+    drag.startY = e.clientY;
+    drag.startPosition = state.position;
+    tapToggle.setPointerCapture(e.pointerId);
+  });
+
+  tapToggle.addEventListener('pointermove', function(e){
+    if(!drag.active) return;
+    var deltaY = e.clientY - drag.startY;
+    if(Math.abs(deltaY) > DRAG_THRESHOLD){
+      drag.moved = true;
+    }
+    if(drag.moved){
+      applyDragPosition(drag.startPosition + deltaY);
+    }
+  });
+
+  function endDrag(e){
+    if(drag.active && !drag.moved){
+      // A simple tap (no meaningful movement) toggles the control bar
+      floatingBar.classList.toggle('hidden');
+    }
+    drag.active = false;
+    drag.moved = false;
+  }
+
+  tapToggle.addEventListener('pointerup', endDrag);
+  tapToggle.addEventListener('pointercancel', endDrag);
+
+  // Mouse wheel / trackpad scrolling as an additional way to move through the script
+  tapToggle.addEventListener('wheel', function(e){
+    e.preventDefault();
+    applyDragPosition(state.position - e.deltaY);
+  }, { passive: false });
+
+  // ---------- Keyboard shortcuts for desktop testing ----------
+  document.addEventListener('keydown', function(e){
+    if(!prompterScreen.classList.contains('active')) return;
+    if(e.code === 'Space'){
+      e.preventDefault();
+      state.isPlaying = !state.isPlaying;
+      updatePlayButton();
+    } else if(e.code === 'ArrowUp'){
+      state.speed = Math.min(150, state.speed + 5);
+      liveSpeed.value = state.speed;
+      liveSpeedVal.textContent = state.speed;
+      updateTimeDisplay();
+    } else if(e.code === 'ArrowDown'){
+      state.speed = Math.max(5, state.speed - 5);
+      liveSpeed.value = state.speed;
+      liveSpeedVal.textContent = state.speed;
+      updateTimeDisplay();
+    }
+  });
+
+  // Initial estimate on load
+  updateSetupEstimate();
+
+})();
+</script>
+
+</body>
+</html>

@@ -35,7 +35,8 @@
     --line-height: 1.8;
     --letter-spacing: 0px;
     --dim-opacity: 0.32;
-    --app-font: "Vazirmatn", "Tahoma", "Segoe UI", sans-serif;
+    /* The app only uses Shabnam; Tahoma is just a fallback while the webfont loads */
+    --app-font: "Shabnam", "Tahoma", sans-serif;
   }
 
   *{ box-sizing: border-box; }
@@ -105,10 +106,6 @@
     padding: 10px 12px;
   }
 
-  .control-box.full-width{
-    grid-column: 1 / -1;
-  }
-
   .control-box label{
     display: flex;
     justify-content: space-between;
@@ -126,18 +123,6 @@
     width: 100%;
     accent-color: var(--accent);
     height: 4px;
-  }
-
-  select#font-select{
-    width: 100%;
-    background: var(--panel);
-    color: var(--text);
-    border: 1px solid var(--panel-border);
-    border-radius: 8px;
-    padding: 8px 10px;
-    font-size: 14px;
-    font-family: var(--app-font);
-    direction: rtl;
   }
 
   #estimate-box{
@@ -173,6 +158,13 @@
 
   #start-btn:active{
     opacity: 0.85;
+  }
+
+  #saved-hint{
+    text-align: center;
+    font-size: 11.5px;
+    color: var(--muted);
+    margin: -6px 0 0;
   }
 
   /* ---- Prompter screen ---- */
@@ -403,13 +395,6 @@
   <textarea id="script-input" placeholder="متن خودت رو اینجا وارد کن..."></textarea>
 
   <div class="controls-grid">
-    <div class="control-box full-width">
-      <label>فونت</label>
-      <select id="font-select">
-        <option value="default">پیش‌فرض سیستم</option>
-        <option value="shabnam">شبنم</option>
-      </select>
-    </div>
     <div class="control-box">
       <label>سرعت اسکرول <span class="val" id="speed-val">40</span></label>
       <input type="range" id="speed-range" min="5" max="150" value="40" step="1">
@@ -434,6 +419,7 @@
   </div>
 
   <button id="start-btn">شروع خوانش</button>
+  <p id="saved-hint">متن و تنظیمات به‌صورت خودکار روی همین دستگاه ذخیره می‌شن.</p>
 </div>
 
 <!-- ===================== PROMPTER SCREEN ===================== -->
@@ -505,7 +491,6 @@
   var tapToggle = document.getElementById('tap-toggle');
 
   // Setup screen sliders
-  var fontSelect = document.getElementById('font-select');
   var speedRange = document.getElementById('speed-range');
   var fontsizeRange = document.getElementById('fontsize-range');
   var lineheightRange = document.getElementById('lineheight-range');
@@ -530,18 +515,12 @@
   var timeRemainingEl = document.getElementById('time-remaining');
   var timeTotalEl = document.getElementById('time-total');
 
-  var FONT_STACKS = {
-    'default': '"Tahoma", "Segoe UI", sans-serif',
-    'shabnam': '"Shabnam", "Tahoma", sans-serif'
-  };
-
   // ---------- State ----------
   var state = {
     speed: 40,          // pixels per second
     fontSize: 40,        // px
     lineHeight: 1.8,
     letterSpacing: 0,    // px
-    fontFamily: 'default',
     isPlaying: false,
     isMirrored: false,
     focusMode: true,
@@ -567,12 +546,54 @@
     return toPersianDigits(mm + ':' + ss);
   }
 
-  // ---------- Font selection ----------
-  fontSelect.addEventListener('change', function(){
-    state.fontFamily = fontSelect.value;
-    document.documentElement.style.setProperty('--app-font', FONT_STACKS[state.fontFamily]);
-    updateSetupEstimate();
-  });
+  // ---------- Persistence: settings and script text survive page reloads on this device ----------
+  // Uses localStorage, which only works once this file is actually opened in a real browser
+  // (downloaded file, hosted page, or installed home-screen app) — it does not persist inside
+  // Claude.ai's in-chat preview of this file.
+  var STORAGE_KEY = 'fa_teleprompter_state_v1';
+
+  function saveSettings(){
+    try{
+      var data = {
+        speed: state.speed,
+        fontSize: state.fontSize,
+        lineHeight: state.lineHeight,
+        letterSpacing: state.letterSpacing,
+        scriptText: scriptInput.value
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch(err){
+      // Storage can be unavailable (e.g. private browsing); fail silently.
+    }
+  }
+
+  function loadSettings(){
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if(!raw) return;
+      var data = JSON.parse(raw);
+
+      if(typeof data.speed === 'number') state.speed = data.speed;
+      if(typeof data.fontSize === 'number') state.fontSize = data.fontSize;
+      if(typeof data.lineHeight === 'number') state.lineHeight = data.lineHeight;
+      if(typeof data.letterSpacing === 'number') state.letterSpacing = data.letterSpacing;
+
+      speedRange.value = state.speed;
+      speedVal.textContent = state.speed;
+      fontsizeRange.value = state.fontSize;
+      fontsizeVal.textContent = state.fontSize;
+      lineheightRange.value = state.lineHeight;
+      lineheightVal.textContent = toPersianDigits(state.lineHeight.toFixed(1));
+      letterspacingRange.value = state.letterSpacing;
+      letterspacingVal.textContent = state.letterSpacing;
+
+      if(typeof data.scriptText === 'string'){
+        scriptInput.value = data.scriptText;
+      }
+    } catch(err){
+      // Corrupted or unavailable storage; just start fresh.
+    }
+  }
 
   // ---------- Sync setup screen slider labels ----------
   function bindSetupSlider(rangeEl, labelEl, key, formatter){
@@ -581,6 +602,7 @@
       state[key] = v;
       labelEl.textContent = formatter ? formatter(v) : v;
       updateSetupEstimate();
+      saveSettings();
     });
   }
 
@@ -588,7 +610,11 @@
   bindSetupSlider(fontsizeRange, fontsizeVal, 'fontSize');
   bindSetupSlider(lineheightRange, lineheightVal, 'lineHeight', function(v){ return toPersianDigits(v.toFixed(1)); });
   bindSetupSlider(letterspacingRange, letterspacingVal, 'letterSpacing');
-  scriptInput.addEventListener('input', updateSetupEstimate);
+
+  scriptInput.addEventListener('input', function(){
+    updateSetupEstimate();
+    saveSettings();
+  });
 
   // ---------- Hidden measurement element to estimate reading duration before starting ----------
   var measureEl = document.createElement('div');
@@ -600,6 +626,7 @@
   measureEl.style.padding = '0 24px';
   measureEl.style.boxSizing = 'border-box';
   measureEl.style.direction = 'rtl';
+  measureEl.style.fontFamily = 'var(--app-font)';
   document.body.appendChild(measureEl);
 
   function buildLineElements(container, text){
@@ -628,7 +655,6 @@
       estimateValue.textContent = toPersianDigits('00:00');
       return;
     }
-    measureEl.style.fontFamily = FONT_STACKS[state.fontFamily];
     measureEl.style.fontSize = state.fontSize + 'px';
     measureEl.style.letterSpacing = state.letterSpacing + 'px';
     buildLineElements(measureEl, text);
@@ -646,7 +672,6 @@
     document.documentElement.style.setProperty('--font-size', state.fontSize + 'px');
     document.documentElement.style.setProperty('--line-height', state.lineHeight);
     document.documentElement.style.setProperty('--letter-spacing', state.letterSpacing + 'px');
-    document.documentElement.style.setProperty('--app-font', FONT_STACKS[state.fontFamily]);
   }
 
   // ---------- Screen Wake Lock: keep the display on while reading ----------
@@ -687,6 +712,7 @@
       return;
     }
 
+    saveSettings();
     applyStyles();
     state.lineElements = buildLineElements(scrollContent, text);
 
@@ -714,14 +740,21 @@
   liveSpeed.addEventListener('input', function(){
     state.speed = parseFloat(liveSpeed.value);
     liveSpeedVal.textContent = state.speed;
+    // Keep the setup screen slider in sync so the change is remembered next time too
+    speedRange.value = state.speed;
+    speedVal.textContent = state.speed;
     updateTimeDisplay();
+    saveSettings();
   });
 
   liveFontsize.addEventListener('input', function(){
     state.fontSize = parseFloat(liveFontsize.value);
     liveFontsizeVal.textContent = state.fontSize;
+    fontsizeRange.value = state.fontSize;
+    fontsizeVal.textContent = state.fontSize;
     applyStyles();
     updateTimeDisplay();
+    saveSettings();
   });
 
   // ---------- Focus-line highlighting ----------
@@ -931,16 +964,23 @@
       state.speed = Math.min(150, state.speed + 5);
       liveSpeed.value = state.speed;
       liveSpeedVal.textContent = state.speed;
+      speedRange.value = state.speed;
+      speedVal.textContent = state.speed;
       updateTimeDisplay();
+      saveSettings();
     } else if(e.code === 'ArrowDown'){
       state.speed = Math.max(5, state.speed - 5);
       liveSpeed.value = state.speed;
       liveSpeedVal.textContent = state.speed;
+      speedRange.value = state.speed;
+      speedVal.textContent = state.speed;
       updateTimeDisplay();
+      saveSettings();
     }
   });
 
-  // Initial estimate on load
+  // ---------- Init: load saved settings/text, then compute the initial estimate ----------
+  loadSettings();
   updateSetupEstimate();
 
 })();

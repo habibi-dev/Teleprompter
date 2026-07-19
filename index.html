@@ -34,7 +34,6 @@
     --font-size: 40px;
     --line-height: 1.8;
     --letter-spacing: 0px;
-    --dim-opacity: 0.32;
     /* The app only uses Shabnam; Tahoma is just a fallback while the webfont loads */
     --app-font: "Shabnam", "Tahoma", sans-serif;
   }
@@ -214,14 +213,7 @@
     line-height: var(--line-height);
     white-space: pre-wrap;
     word-break: break-word;
-    opacity: var(--dim-opacity);
     color: var(--text);
-    transition: opacity 0.2s ease, color 0.2s ease;
-  }
-
-  .prompt-line.active-line{
-    opacity: 1;
-    color: #ffffff;
   }
 
   .prompt-line.blank-line{
@@ -467,10 +459,6 @@
           <span class="icon">⇋</span>
           <span class="label">آینه</span>
         </button>
-        <button class="icon-btn toggle-on" id="focus-btn">
-          <span class="icon">◎</span>
-          <span class="label">تمرکز</span>
-        </button>
         <button class="icon-btn" id="bar-position-btn">
           <span class="icon">⇅</span>
           <span class="label">جای نوار</span>
@@ -527,7 +515,6 @@
   var playBtn = document.getElementById('play-btn');
   var exitBtn = document.getElementById('exit-btn');
   var mirrorBtn = document.getElementById('mirror-btn');
-  var focusBtn = document.getElementById('focus-btn');
   var barPositionBtn = document.getElementById('bar-position-btn');
   var liveSpeed = document.getElementById('live-speed');
   var liveSpeedVal = document.getElementById('live-speed-val');
@@ -545,11 +532,9 @@
     letterSpacing: 0,    // px
     isPlaying: false,
     isMirrored: false,
-    focusMode: true,
     barPosition: 'bottom', // 'bottom' or 'top'
     position: 0,          // current translateY offset of the script, in px
     lastTimestamp: null,
-    lastFocusCheck: 0,
     rafId: null,
     lineElements: []
   };
@@ -779,7 +764,6 @@
 
     applyBarPosition();
     requestWakeLock();
-    updateFocusLine();
     updateTimeDisplay();
   });
 
@@ -803,36 +787,6 @@
     updateTimeDisplay();
     saveSettings();
   });
-
-  // ---------- Focus-line highlighting ----------
-  // Highlights the paragraph/line currently crossing the center guide, dims the rest.
-  function updateFocusLine(){
-    if(!state.focusMode || state.lineElements.length === 0) return;
-
-    var viewportRect = scrollViewport.getBoundingClientRect();
-    var centerY = viewportRect.top + viewportRect.height / 2;
-
-    var closestEl = null;
-    var closestDistance = Infinity;
-
-    for(var i = 0; i < state.lineElements.length; i++){
-      var el = state.lineElements[i];
-      if(el.classList.contains('blank-line')) continue;
-      var rect = el.getBoundingClientRect();
-      if(rect.bottom < viewportRect.top - 200 || rect.top > viewportRect.bottom + 200) continue; // skip far-off lines for performance
-      var lineCenter = rect.top + rect.height / 2;
-      var distance = Math.abs(lineCenter - centerY);
-      if(distance < closestDistance){
-        closestDistance = distance;
-        closestEl = el;
-      }
-    }
-
-    for(var j = 0; j < state.lineElements.length; j++){
-      var isActive = state.lineElements[j] === closestEl;
-      state.lineElements[j].classList.toggle('active-line', isActive);
-    }
-  }
 
   // ---------- Time remaining / total display while reading ----------
   function updateTimeDisplay(){
@@ -860,12 +814,6 @@
       scrollContent.style.transform = 'translateY(' + state.position + 'px)';
 
       updateTimeDisplay();
-
-      // Throttle focus-line recalculation for performance
-      if(timestamp - state.lastFocusCheck > 120){
-        updateFocusLine();
-        state.lastFocusCheck = timestamp;
-      }
 
       // Stop automatically once content has fully scrolled past the top
       var contentHeight = scrollContent.scrollHeight;
@@ -907,25 +855,6 @@
     mirrorBtn.classList.toggle('toggle-on', state.isMirrored);
   });
 
-  // ---------- Focus mode toggle ----------
-  focusBtn.addEventListener('click', function(){
-    state.focusMode = !state.focusMode;
-    focusBtn.classList.toggle('toggle-on', state.focusMode);
-    if(state.focusMode){
-      // Clear the inline opacity that was forced on while focus mode was off,
-      // otherwise it overrides the class-based dimming and every line stays bright.
-      for(var i = 0; i < state.lineElements.length; i++){
-        state.lineElements[i].style.opacity = '';
-      }
-      updateFocusLine();
-    } else {
-      for(var i = 0; i < state.lineElements.length; i++){
-        state.lineElements[i].classList.remove('active-line');
-        state.lineElements[i].style.opacity = '1';
-      }
-    }
-  });
-
   // ---------- Exit back to setup screen ----------
   exitBtn.addEventListener('click', function(){
     state.isPlaying = false;
@@ -956,7 +885,6 @@
       state.isPlaying = false;
       updatePlayButton();
     }
-    updateFocusLine();
     updateTimeDisplay();
   }
 
@@ -1004,7 +932,6 @@
     if(prompterScreen.classList.contains('active')){
       state.position = clampPosition(state.position);
       scrollContent.style.transform = 'translateY(' + state.position + 'px)';
-      updateFocusLine();
       updateTimeDisplay();
     } else {
       updateSetupEstimate();
